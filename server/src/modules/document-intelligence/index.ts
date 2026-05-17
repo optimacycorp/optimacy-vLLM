@@ -14,6 +14,7 @@ export * from "./documentExtractionService.js";
 export * from "./documentIngestionService.js";
 export * from "./documentPipelineService.js";
 export * from "./documentParsingService.js";
+export * from "./projectExtractionService.js";
 export * from "./projectQaService.js";
 export * from "./documentQaService.js";
 export * from "./documentRepository.js";

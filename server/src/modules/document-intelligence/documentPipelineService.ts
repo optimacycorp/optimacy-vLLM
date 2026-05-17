@@ -50,13 +50,20 @@ export class DocumentPipelineService {
       return null;
     }
 
-    const [pages, chunks, warnings] = await Promise.all([
+    const [extractions, pages, chunks, warnings] = await Promise.all([
+      this.repository.listExtractionsByDocumentId(documentId),
       this.repository.listPages(documentId),
       this.repository.listChunks(documentId),
       this.repository.getProcessingWarnings(documentId),
     ]);
 
-    return { document, pages, chunks, warnings };
+    return {
+      document,
+      extractions,
+      pages,
+      chunks,
+      warnings,
+    };
   }
 
   private async ensureParsed(document: ProjectDocument): Promise<void> {

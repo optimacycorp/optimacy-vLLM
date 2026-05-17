@@ -181,6 +181,55 @@ describe("app server", () => {
 
     await close();
   });
+
+  it("persists structured extractions for supported document types", async () => {
+    const { baseUrl, close } = await startTestServer();
+
+    const createResponse = await fetch(`${baseUrl}/api/projects/project-extract/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalFilename: "Title Commitment.pdf",
+        sourceText:
+          "Title commitment schedule a schedule b commitment number effective date proposed insured requirements exceptions legal description vested owner utility easement access rights ditch rights water rights. This mock source is intentionally long enough for parsing and indexing so extraction can run against persisted chunks.",
+      }),
+    });
+    const created = (await createResponse.json()) as { document: { id: string } };
+    expect(createResponse.status).toBe(201);
+
+    const workerResponse = await fetch(`${baseUrl}/api/admin/document-worker/run`, { method: "POST" });
+    expect(workerResponse.status).toBe(200);
+
+    const extractionResponse = await fetch(`${baseUrl}/api/documents/${created.document.id}/extractions`, {
+      method: "POST",
+    });
+    const extractionBody = (await extractionResponse.json()) as {
+      extraction: { extractionType: string; extractedJson: { warnings: string[] } };
+    };
+
+    expect(extractionResponse.status).toBe(201);
+    expect(extractionBody.extraction.extractionType).toBe("title_commitment");
+    expect(Array.isArray(extractionBody.extraction.extractedJson.warnings)).toBe(true);
+
+    const detailResponse = await fetch(`${baseUrl}/api/documents/${created.document.id}`);
+    const detailBody = (await detailResponse.json()) as {
+      document: { extractionStatus: string };
+      extractions: Array<{ extractionType: string }>;
+    };
+    expect(detailResponse.status).toBe(200);
+    expect(detailBody.document.extractionStatus).toBe("complete");
+    expect(detailBody.extractions).toHaveLength(1);
+
+    const projectExtractionsResponse = await fetch(`${baseUrl}/api/projects/project-extract/document-extractions`);
+    const projectExtractionsBody = (await projectExtractionsResponse.json()) as {
+      extractions: Array<{ documentId: string }>;
+    };
+    expect(projectExtractionsResponse.status).toBe(200);
+    expect(projectExtractionsBody.extractions).toHaveLength(1);
+    expect(projectExtractionsBody.extractions[0]?.documentId).toBe(created.document.id);
+
+    await close();
+  });
 });
 
 async function startTestServer() {

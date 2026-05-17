@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { createLlmClient } from "./modules/llm/createLlmClient.js";
 import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
 import { DocumentPipelineService } from "./modules/document-intelligence/documentPipelineService.js";
+import { ProjectExtractionService } from "./modules/document-intelligence/projectExtractionService.js";
 import { ProjectQaService } from "./modules/document-intelligence/projectQaService.js";
 import {
   createProjectDocumentRepository,
@@ -188,6 +189,7 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
   const projectDocumentRepository = dependencies.projectDocumentRepository ?? createProjectDocumentRepository();
   const documentPipelineService = new DocumentPipelineService(projectDocumentRepository);
   const llmClient = createLlmClient(loadLlmConfig());
+  const projectExtractionService = new ProjectExtractionService(projectDocumentRepository, llmClient);
   const projectQaService = new ProjectQaService(projectDocumentRepository, llmClient);
 
   return http.createServer(async (request, response) => {
@@ -257,6 +259,14 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         const [, projectId] = projectDocumentsMatch;
         const documents = await projectDocumentRepository.listByProjectId(projectId);
         writeJson(response, 200, { documents });
+        return;
+      }
+
+      const projectExtractionsMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/document-extractions$/);
+      if (projectExtractionsMatch && request.method === "GET") {
+        const [, projectId] = projectExtractionsMatch;
+        const extractions = await projectDocumentRepository.listExtractionsByProjectId(projectId);
+        writeJson(response, 200, { extractions });
         return;
       }
 
@@ -338,6 +348,39 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         }
 
         writeJson(response, 200, detail);
+        return;
+      }
+
+      const documentExtractionsMatch = matchRoute(pathname, /^\/api\/documents\/([^/]+)\/extractions$/);
+      if (documentExtractionsMatch && request.method === "GET") {
+        const [, documentId] = documentExtractionsMatch;
+        const document = await projectDocumentRepository.getById(documentId);
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        const extractions = await projectDocumentRepository.listExtractionsByDocumentId(documentId);
+        writeJson(response, 200, { extractions });
+        return;
+      }
+
+      if (documentExtractionsMatch && request.method === "POST") {
+        const [, documentId] = documentExtractionsMatch;
+        const document = await projectDocumentRepository.getById(documentId);
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        try {
+          const extraction = await projectExtractionService.extractDocument(documentId);
+          writeJson(response, 201, { extraction });
+        } catch (error) {
+          writeJson(response, 400, {
+            error: error instanceof Error ? error.message : "Extraction failed.",
+          });
+        }
         return;
       }
 

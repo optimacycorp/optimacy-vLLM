@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
   DocumentChunk,
+  DocumentExtractionRecord,
   DocumentPage,
   DocumentQaRunRecord,
   IngestionInput,
@@ -15,6 +16,7 @@ interface DocumentStoreShape {
   documents: ProjectDocument[];
   pages: DocumentPage[];
   chunks: DocumentChunk[];
+  extractions: DocumentExtractionRecord[];
   qaRuns: DocumentQaRunRecord[];
   sourceTexts: Record<string, string>;
   processingWarnings: Record<string, string[]>;
@@ -45,6 +47,9 @@ export interface ProjectDocumentRepository {
   replaceChunks(documentId: string, chunks: DocumentChunk[]): Promise<void>;
   listChunks(documentId: string): Promise<DocumentChunk[]>;
   listChunksByProjectId(projectId: string): Promise<DocumentChunk[]>;
+  createExtraction(record: Omit<DocumentExtractionRecord, "id" | "createdAt">): Promise<DocumentExtractionRecord>;
+  listExtractionsByDocumentId(documentId: string): Promise<DocumentExtractionRecord[]>;
+  listExtractionsByProjectId(projectId: string): Promise<DocumentExtractionRecord[]>;
   setProcessingWarnings(documentId: string, warnings: string[]): Promise<void>;
   getProcessingWarnings(documentId: string): Promise<string[]>;
   createQaRun(run: Omit<DocumentQaRunRecord, "id" | "createdAt">): Promise<DocumentQaRunRecord>;
@@ -157,6 +162,33 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
       .sort((a, b) => a.documentId.localeCompare(b.documentId) || a.chunkIndex - b.chunkIndex);
   }
 
+  async createExtraction(record: Omit<DocumentExtractionRecord, "id" | "createdAt">): Promise<DocumentExtractionRecord> {
+    const store = await this.readStore();
+    const extraction: DocumentExtractionRecord = {
+      ...record,
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    store.extractions.push(extraction);
+    await this.writeStore(store);
+    return extraction;
+  }
+
+  async listExtractionsByDocumentId(documentId: string): Promise<DocumentExtractionRecord[]> {
+    const store = await this.readStore();
+    return store.extractions
+      .filter((extraction) => extraction.documentId === documentId)
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }
+
+  async listExtractionsByProjectId(projectId: string): Promise<DocumentExtractionRecord[]> {
+    const store = await this.readStore();
+    const documentIds = new Set(store.documents.filter((document) => document.projectId === projectId).map((document) => document.id));
+    return store.extractions
+      .filter((extraction) => documentIds.has(extraction.documentId))
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }
+
   async setProcessingWarnings(documentId: string, warnings: string[]): Promise<void> {
     const store = await this.readStore();
     store.processingWarnings[documentId] = warnings;
@@ -205,6 +237,7 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
         documents: parsed.documents ?? [],
         pages: parsed.pages ?? [],
         chunks: parsed.chunks ?? [],
+        extractions: parsed.extractions ?? [],
         qaRuns: parsed.qaRuns ?? [],
         sourceTexts: parsed.sourceTexts ?? {},
         processingWarnings: parsed.processingWarnings ?? {},
@@ -212,7 +245,7 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
-        return { documents: [], pages: [], chunks: [], qaRuns: [], sourceTexts: {}, processingWarnings: {} };
+        return { documents: [], pages: [], chunks: [], extractions: [], qaRuns: [], sourceTexts: {}, processingWarnings: {} };
       }
       throw error;
     }
