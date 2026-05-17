@@ -59,6 +59,15 @@ export interface DocumentChunk {
   createdAt?: string;
 }
 
+export interface DocumentProcessingSummary {
+  documentId: string;
+  parsedStatus: ProcessingStatus;
+  indexedStatus: ProcessingStatus;
+  pageCount: number;
+  chunkCount: number;
+  warnings: string[];
+}
+
 export interface RetrievedChunk extends DocumentChunk {
   documentTitle?: string | null;
   score: number;

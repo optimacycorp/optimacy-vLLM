@@ -2,8 +2,25 @@ import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { createLlmClient } from "./modules/llm/createLlmClient.js";
 import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
+import { DocumentPipelineService } from "./modules/document-intelligence/documentPipelineService.js";
+import {
+  createProjectDocumentRepository,
+  type ProjectDocumentRepository,
+} from "./modules/document-intelligence/documentRepository.js";
 
 const port = Number(process.env.PORT ?? 3000);
+
+interface CreateDocumentRequestBody {
+  originalFilename?: string;
+  storagePath?: string;
+  firstPageText?: string;
+  sourceText?: string;
+  title?: string | null;
+  source?: string | null;
+  recordingDate?: string | null;
+  receptionNumber?: string | null;
+  bookPage?: string | null;
+}
 
 function buildStartupPage() {
   const status = getLlmProviderStatus();
@@ -141,6 +158,10 @@ function writeJson(response: http.ServerResponse, statusCode: number, payload: u
   response.end(JSON.stringify(payload));
 }
 
+function matchRoute(pathname: string, pattern: RegExp): RegExpExecArray | null {
+  return pattern.exec(pathname);
+}
+
 function isAuthorized(request: http.IncomingMessage): boolean {
   const configuredToken = process.env.ADMIN_API_TOKEN;
   if (!configuredToken) {
@@ -151,7 +172,14 @@ function isAuthorized(request: http.IncomingMessage): boolean {
   return bearer === configuredToken || request.headers["x-admin-token"] === configuredToken;
 }
 
-export function createAppServer() {
+interface AppServerDependencies {
+  projectDocumentRepository?: ProjectDocumentRepository;
+}
+
+export function createAppServer(dependencies: AppServerDependencies = {}) {
+  const projectDocumentRepository = dependencies.projectDocumentRepository ?? createProjectDocumentRepository();
+  const documentPipelineService = new DocumentPipelineService(projectDocumentRepository);
+
   return http.createServer(async (request, response) => {
     try {
       if (!request.url || !request.method) {
@@ -159,7 +187,10 @@ export function createAppServer() {
         return;
       }
 
-      if (request.url === "/health" && request.method === "GET") {
+      const url = new URL(request.url, `http://${request.headers.host ?? "localhost"}`);
+      const pathname = url.pathname;
+
+      if (pathname === "/health" && request.method === "GET") {
         writeJson(response, 200, {
           status: "ok",
           service: "waymail-portal",
@@ -169,7 +200,7 @@ export function createAppServer() {
         return;
       }
 
-      if (request.url === "/api/admin/ai-settings" && request.method === "GET") {
+      if (pathname === "/api/admin/ai-settings" && request.method === "GET") {
         if (!isAuthorized(request)) {
           writeJson(response, 403, { error: "Forbidden" });
           return;
@@ -179,7 +210,7 @@ export function createAppServer() {
         return;
       }
 
-      if (request.url === "/api/admin/ai-settings/test" && request.method === "POST") {
+      if (pathname === "/api/admin/ai-settings/test" && request.method === "POST") {
         if (!isAuthorized(request)) {
           writeJson(response, 403, { error: "Forbidden" });
           return;
@@ -211,7 +242,116 @@ export function createAppServer() {
         return;
       }
 
-      if (request.url === "/" && request.method === "GET") {
+      const projectDocumentsMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/documents$/);
+      if (projectDocumentsMatch && request.method === "GET") {
+        const [, projectId] = projectDocumentsMatch;
+        const documents = await projectDocumentRepository.listByProjectId(projectId);
+        writeJson(response, 200, { documents });
+        return;
+      }
+
+      if (projectDocumentsMatch && request.method === "POST") {
+        const [, projectId] = projectDocumentsMatch;
+        const body = (await readJsonBody(request)) as CreateDocumentRequestBody;
+        const originalFilename = body.originalFilename?.trim();
+
+        if (!originalFilename) {
+          writeJson(response, 400, { error: "originalFilename is required." });
+          return;
+        }
+
+        const document = await projectDocumentRepository.create({
+          projectId,
+          originalFilename,
+          storagePath: body.storagePath?.trim() || `projects/${projectId}/${originalFilename}`,
+          firstPageText: body.sourceText ?? body.firstPageText,
+          title: body.title ?? null,
+          source: body.source ?? null,
+          recordingDate: body.recordingDate ?? null,
+          receptionNumber: body.receptionNumber ?? null,
+          bookPage: body.bookPage ?? null,
+        });
+
+        if (body.sourceText?.trim()) {
+          await projectDocumentRepository.setSourceText(document.id, body.sourceText);
+        }
+
+        writeJson(response, 201, {
+          document,
+          queued: {
+            parse: true,
+            index: false,
+            extract: false,
+          },
+        });
+        return;
+      }
+
+      const documentDetailMatch = matchRoute(pathname, /^\/api\/documents\/([^/]+)$/);
+      if (documentDetailMatch && request.method === "GET") {
+        const [, documentId] = documentDetailMatch;
+        const detail = await documentPipelineService.getDocumentDetail(documentId);
+        if (!detail) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        writeJson(response, 200, detail);
+        return;
+      }
+
+      const reparseMatch = matchRoute(pathname, /^\/api\/documents\/([^/]+)\/reparse$/);
+      if (reparseMatch && request.method === "POST") {
+        const [, documentId] = reparseMatch;
+        const document = await projectDocumentRepository.updateStatuses(documentId, {
+          parsedStatus: "pending",
+        });
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        const summary = await documentPipelineService.processDocument(documentId);
+        writeJson(response, 200, {
+          document,
+          queued: { parse: true },
+          processing: summary,
+        });
+        return;
+      }
+
+      const reindexMatch = matchRoute(pathname, /^\/api\/documents\/([^/]+)\/reindex$/);
+      if (reindexMatch && request.method === "POST") {
+        const [, documentId] = reindexMatch;
+        const document = await projectDocumentRepository.updateStatuses(documentId, {
+          indexedStatus: "pending",
+        });
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        const summary = await documentPipelineService.processDocument(documentId);
+        writeJson(response, 200, {
+          document,
+          queued: { index: true },
+          processing: summary,
+        });
+        return;
+      }
+
+      if (pathname === "/api/admin/document-worker/run" && request.method === "POST") {
+        if (!isAuthorized(request)) {
+          writeJson(response, 403, { error: "Forbidden" });
+          return;
+        }
+
+        const results = await documentPipelineService.processPendingDocumentsOnce();
+        writeJson(response, 200, { processed: results.length, results });
+        return;
+      }
+
+      if (pathname === "/" && request.method === "GET") {
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         response.end(buildStartupPage());
         return;
