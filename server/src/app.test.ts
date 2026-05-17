@@ -230,6 +230,51 @@ describe("app server", () => {
 
     await close();
   });
+
+  it("generates and lists AI findings from persisted extractions", async () => {
+    const { baseUrl, close } = await startTestServer();
+
+    const createResponse = await fetch(`${baseUrl}/api/projects/project-findings/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalFilename: "Survey Utility Easement.pdf",
+        sourceText:
+          "Utility easement affecting the property with access rights, maintenance rights, legal description references, and survey relevance language. The document also mentions utility facilities, ditch concerns, and right of access in a way that should trigger survey-relevant findings after extraction. This text is long enough to pass mock parsing and indexing.",
+      }),
+    });
+    const created = (await createResponse.json()) as { document: { id: string } };
+    expect(createResponse.status).toBe(201);
+
+    const workerResponse = await fetch(`${baseUrl}/api/admin/document-worker/run`, { method: "POST" });
+    expect(workerResponse.status).toBe(200);
+
+    const extractionResponse = await fetch(`${baseUrl}/api/documents/${created.document.id}/extractions`, {
+      method: "POST",
+    });
+    const extractionBody = (await extractionResponse.json()) as {
+      findings: Array<{ findingType: string }>;
+    };
+    expect(extractionResponse.status).toBe(201);
+    expect(extractionBody.findings.length).toBeGreaterThan(0);
+
+    const findingsResponse = await fetch(`${baseUrl}/api/documents/${created.document.id}/findings`);
+    const findingsBody = (await findingsResponse.json()) as {
+      findings: Array<{ findingType: string; severity: string }>;
+    };
+    expect(findingsResponse.status).toBe(200);
+    expect(findingsBody.findings.length).toBeGreaterThan(0);
+
+    const projectFindingsResponse = await fetch(`${baseUrl}/api/projects/project-findings/document-findings`);
+    const projectFindingsBody = (await projectFindingsResponse.json()) as {
+      findings: Array<{ documentId: string }>;
+    };
+    expect(projectFindingsResponse.status).toBe(200);
+    expect(projectFindingsBody.findings.length).toBeGreaterThan(0);
+    expect(projectFindingsBody.findings[0]?.documentId).toBe(created.document.id);
+
+    await close();
+  });
 });
 
 async function startTestServer() {

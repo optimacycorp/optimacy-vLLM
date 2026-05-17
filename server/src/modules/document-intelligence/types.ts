@@ -152,6 +152,19 @@ export interface DocumentQaRunRecord {
   createdAt?: string;
 }
 
+export interface DocumentAiFindingRecord {
+  id: string;
+  projectId: string;
+  documentId?: string | null;
+  findingType: string;
+  severity: Severity;
+  title: string;
+  explanation: string;
+  supportingChunkIds: string[];
+  status: "open" | "resolved" | "dismissed";
+  createdAt?: string;
+}
+
 export interface DocumentEvalCase {
   id: string;
   projectId: string;

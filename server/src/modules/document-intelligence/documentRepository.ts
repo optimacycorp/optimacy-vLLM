@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type {
+  DocumentAiFindingRecord,
   DocumentChunk,
   DocumentExtractionRecord,
   DocumentPage,
@@ -17,6 +18,7 @@ interface DocumentStoreShape {
   pages: DocumentPage[];
   chunks: DocumentChunk[];
   extractions: DocumentExtractionRecord[];
+  findings: DocumentAiFindingRecord[];
   qaRuns: DocumentQaRunRecord[];
   sourceTexts: Record<string, string>;
   processingWarnings: Record<string, string[]>;
@@ -50,6 +52,9 @@ export interface ProjectDocumentRepository {
   createExtraction(record: Omit<DocumentExtractionRecord, "id" | "createdAt">): Promise<DocumentExtractionRecord>;
   listExtractionsByDocumentId(documentId: string): Promise<DocumentExtractionRecord[]>;
   listExtractionsByProjectId(projectId: string): Promise<DocumentExtractionRecord[]>;
+  replaceFindingsForDocument(documentId: string, findings: DocumentAiFindingRecord[]): Promise<void>;
+  listFindingsByDocumentId(documentId: string): Promise<DocumentAiFindingRecord[]>;
+  listFindingsByProjectId(projectId: string): Promise<DocumentAiFindingRecord[]>;
   setProcessingWarnings(documentId: string, warnings: string[]): Promise<void>;
   getProcessingWarnings(documentId: string): Promise<string[]>;
   createQaRun(run: Omit<DocumentQaRunRecord, "id" | "createdAt">): Promise<DocumentQaRunRecord>;
@@ -189,6 +194,26 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
       .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   }
 
+  async replaceFindingsForDocument(documentId: string, findings: DocumentAiFindingRecord[]): Promise<void> {
+    const store = await this.readStore();
+    store.findings = store.findings.filter((finding) => finding.documentId !== documentId).concat(findings);
+    await this.writeStore(store);
+  }
+
+  async listFindingsByDocumentId(documentId: string): Promise<DocumentAiFindingRecord[]> {
+    const store = await this.readStore();
+    return store.findings
+      .filter((finding) => finding.documentId === documentId)
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }
+
+  async listFindingsByProjectId(projectId: string): Promise<DocumentAiFindingRecord[]> {
+    const store = await this.readStore();
+    return store.findings
+      .filter((finding) => finding.projectId === projectId)
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }
+
   async setProcessingWarnings(documentId: string, warnings: string[]): Promise<void> {
     const store = await this.readStore();
     store.processingWarnings[documentId] = warnings;
@@ -238,6 +263,7 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
         pages: parsed.pages ?? [],
         chunks: parsed.chunks ?? [],
         extractions: parsed.extractions ?? [],
+        findings: parsed.findings ?? [],
         qaRuns: parsed.qaRuns ?? [],
         sourceTexts: parsed.sourceTexts ?? {},
         processingWarnings: parsed.processingWarnings ?? {},
@@ -245,7 +271,7 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
-        return { documents: [], pages: [], chunks: [], extractions: [], qaRuns: [], sourceTexts: {}, processingWarnings: {} };
+        return { documents: [], pages: [], chunks: [], extractions: [], findings: [], qaRuns: [], sourceTexts: {}, processingWarnings: {} };
       }
       throw error;
     }

@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { createLlmClient } from "./modules/llm/createLlmClient.js";
 import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
 import { DocumentPipelineService } from "./modules/document-intelligence/documentPipelineService.js";
+import { FindingsService } from "./modules/document-intelligence/findingsService.js";
 import { ProjectExtractionService } from "./modules/document-intelligence/projectExtractionService.js";
 import { ProjectQaService } from "./modules/document-intelligence/projectQaService.js";
 import {
@@ -189,6 +190,7 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
   const projectDocumentRepository = dependencies.projectDocumentRepository ?? createProjectDocumentRepository();
   const documentPipelineService = new DocumentPipelineService(projectDocumentRepository);
   const llmClient = createLlmClient(loadLlmConfig());
+  const findingsService = new FindingsService(projectDocumentRepository);
   const projectExtractionService = new ProjectExtractionService(projectDocumentRepository, llmClient);
   const projectQaService = new ProjectQaService(projectDocumentRepository, llmClient);
 
@@ -267,6 +269,14 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         const [, projectId] = projectExtractionsMatch;
         const extractions = await projectDocumentRepository.listExtractionsByProjectId(projectId);
         writeJson(response, 200, { extractions });
+        return;
+      }
+
+      const projectFindingsMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/document-findings$/);
+      if (projectFindingsMatch && request.method === "GET") {
+        const [, projectId] = projectFindingsMatch;
+        const findings = await projectDocumentRepository.listFindingsByProjectId(projectId);
+        writeJson(response, 200, { findings });
         return;
       }
 
@@ -375,12 +385,40 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
 
         try {
           const extraction = await projectExtractionService.extractDocument(documentId);
-          writeJson(response, 201, { extraction });
+          const findings = await findingsService.generateForDocument(documentId);
+          writeJson(response, 201, { extraction, findings });
         } catch (error) {
           writeJson(response, 400, {
             error: error instanceof Error ? error.message : "Extraction failed.",
           });
         }
+        return;
+      }
+
+      const documentFindingsMatch = matchRoute(pathname, /^\/api\/documents\/([^/]+)\/findings$/);
+      if (documentFindingsMatch && request.method === "GET") {
+        const [, documentId] = documentFindingsMatch;
+        const document = await projectDocumentRepository.getById(documentId);
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        const findings = await projectDocumentRepository.listFindingsByDocumentId(documentId);
+        writeJson(response, 200, { findings });
+        return;
+      }
+
+      if (documentFindingsMatch && request.method === "POST") {
+        const [, documentId] = documentFindingsMatch;
+        const document = await projectDocumentRepository.getById(documentId);
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        const findings = await findingsService.generateForDocument(documentId);
+        writeJson(response, 201, { findings });
         return;
       }
 
