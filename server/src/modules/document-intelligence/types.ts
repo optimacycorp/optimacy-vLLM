@@ -138,6 +138,20 @@ export interface QaResponse {
   latencyMs: number;
 }
 
+export interface DocumentQaRunRecord {
+  id: string;
+  projectId: string;
+  question: string;
+  answer: string;
+  citedChunkIds: string[];
+  modelName: string;
+  retrievalK: number;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  latencyMs?: number | null;
+  createdAt?: string;
+}
+
 export interface DocumentEvalCase {
   id: string;
   projectId: string;

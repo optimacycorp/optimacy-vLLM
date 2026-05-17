@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { createLlmClient } from "./modules/llm/createLlmClient.js";
 import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
 import { DocumentPipelineService } from "./modules/document-intelligence/documentPipelineService.js";
+import { ProjectQaService } from "./modules/document-intelligence/projectQaService.js";
 import {
   createProjectDocumentRepository,
   type ProjectDocumentRepository,
@@ -20,6 +21,13 @@ interface CreateDocumentRequestBody {
   recordingDate?: string | null;
   receptionNumber?: string | null;
   bookPage?: string | null;
+}
+
+interface ProjectDocumentQaRequestBody {
+  question?: string;
+  topK?: number;
+  documentTypeFilter?: string[];
+  documentIds?: string[];
 }
 
 function buildStartupPage() {
@@ -179,6 +187,8 @@ interface AppServerDependencies {
 export function createAppServer(dependencies: AppServerDependencies = {}) {
   const projectDocumentRepository = dependencies.projectDocumentRepository ?? createProjectDocumentRepository();
   const documentPipelineService = new DocumentPipelineService(projectDocumentRepository);
+  const llmClient = createLlmClient(loadLlmConfig());
+  const projectQaService = new ProjectQaService(projectDocumentRepository, llmClient);
 
   return http.createServer(async (request, response) => {
     try {
@@ -247,6 +257,37 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         const [, projectId] = projectDocumentsMatch;
         const documents = await projectDocumentRepository.listByProjectId(projectId);
         writeJson(response, 200, { documents });
+        return;
+      }
+
+      const projectQaMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/document-qa$/);
+      if (projectQaMatch && request.method === "POST") {
+        const [, projectId] = projectQaMatch;
+        const body = (await readJsonBody(request)) as ProjectDocumentQaRequestBody;
+        const question = body.question?.trim();
+
+        if (!question) {
+          writeJson(response, 400, { error: "question is required." });
+          return;
+        }
+
+        const qaResponse = await projectQaService.answerQuestion({
+          projectId,
+          question,
+          topK: body.topK,
+          documentIds: body.documentIds,
+          documentTypeFilter: body.documentTypeFilter as never,
+        });
+
+        writeJson(response, 200, qaResponse);
+        return;
+      }
+
+      const projectQaRunsMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/document-qa-runs$/);
+      if (projectQaRunsMatch && request.method === "GET") {
+        const [, projectId] = projectQaRunsMatch;
+        const runs = await projectDocumentRepository.listQaRunsByProjectId(projectId);
+        writeJson(response, 200, { runs });
         return;
       }
 

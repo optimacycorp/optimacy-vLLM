@@ -26,6 +26,18 @@ export class MockLlmClient implements LlmClient {
       return { status: "ok" };
     }
 
+    if (/question:/i.test(prompt)) {
+      const chunkId = prompt.match(/chunkId=([a-f0-9-]+)/i)?.[1] ?? null;
+      const chunkText = prompt.match(/text=(.+)$/im)?.[1]?.trim() ?? null;
+      return {
+        answer: chunkText
+          ? `Mock answer from retrieved context: ${chunkText.slice(0, 180)}`
+          : "I do not have enough information in the uploaded documents.",
+        warnings: chunkText ? ["Mock QA answer generated from the top retrieved chunk."] : ["Mock QA mode does not synthesize document facts."],
+        citations: chunkId ? [{ chunkId, claim: "Mock claim grounded in retrieved context." }] : [],
+      };
+    }
+
     if (/commitment/i.test(prompt)) {
       return {
         commitmentNumber: null,
@@ -58,14 +70,6 @@ export class MockLlmClient implements LlmClient {
         legalDescription: null,
         surveyRelevance: "low",
         warnings: ["Mock extraction generated without source document review."],
-      };
-    }
-
-    if (/question:/i.test(prompt)) {
-      return {
-        answer: "I do not have enough information in the uploaded documents.",
-        warnings: ["Mock QA mode does not synthesize document facts."],
-        citations: [],
       };
     }
 

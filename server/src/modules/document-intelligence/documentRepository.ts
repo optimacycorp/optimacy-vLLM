@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type {
   DocumentChunk,
   DocumentPage,
+  DocumentQaRunRecord,
   IngestionInput,
   ProcessingStatus,
   ProjectDocument,
@@ -14,6 +15,7 @@ interface DocumentStoreShape {
   documents: ProjectDocument[];
   pages: DocumentPage[];
   chunks: DocumentChunk[];
+  qaRuns: DocumentQaRunRecord[];
   sourceTexts: Record<string, string>;
   processingWarnings: Record<string, string[]>;
 }
@@ -42,8 +44,11 @@ export interface ProjectDocumentRepository {
   listPages(documentId: string): Promise<DocumentPage[]>;
   replaceChunks(documentId: string, chunks: DocumentChunk[]): Promise<void>;
   listChunks(documentId: string): Promise<DocumentChunk[]>;
+  listChunksByProjectId(projectId: string): Promise<DocumentChunk[]>;
   setProcessingWarnings(documentId: string, warnings: string[]): Promise<void>;
   getProcessingWarnings(documentId: string): Promise<string[]>;
+  createQaRun(run: Omit<DocumentQaRunRecord, "id" | "createdAt">): Promise<DocumentQaRunRecord>;
+  listQaRunsByProjectId(projectId: string): Promise<DocumentQaRunRecord[]>;
   listPendingParseDocuments(): Promise<ProjectDocument[]>;
   listPendingIndexDocuments(): Promise<ProjectDocument[]>;
 }
@@ -144,6 +149,14 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
       .sort((a, b) => a.chunkIndex - b.chunkIndex);
   }
 
+  async listChunksByProjectId(projectId: string): Promise<DocumentChunk[]> {
+    const store = await this.readStore();
+    const documentIds = new Set(store.documents.filter((document) => document.projectId === projectId).map((document) => document.id));
+    return store.chunks
+      .filter((chunk) => documentIds.has(chunk.documentId))
+      .sort((a, b) => a.documentId.localeCompare(b.documentId) || a.chunkIndex - b.chunkIndex);
+  }
+
   async setProcessingWarnings(documentId: string, warnings: string[]): Promise<void> {
     const store = await this.readStore();
     store.processingWarnings[documentId] = warnings;
@@ -153,6 +166,25 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
   async getProcessingWarnings(documentId: string): Promise<string[]> {
     const store = await this.readStore();
     return store.processingWarnings[documentId] ?? [];
+  }
+
+  async createQaRun(run: Omit<DocumentQaRunRecord, "id" | "createdAt">): Promise<DocumentQaRunRecord> {
+    const store = await this.readStore();
+    const record: DocumentQaRunRecord = {
+      ...run,
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+    };
+    store.qaRuns.push(record);
+    await this.writeStore(store);
+    return record;
+  }
+
+  async listQaRunsByProjectId(projectId: string): Promise<DocumentQaRunRecord[]> {
+    const store = await this.readStore();
+    return store.qaRuns
+      .filter((run) => run.projectId === projectId)
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
   }
 
   async listPendingParseDocuments(): Promise<ProjectDocument[]> {
@@ -173,13 +205,14 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
         documents: parsed.documents ?? [],
         pages: parsed.pages ?? [],
         chunks: parsed.chunks ?? [],
+        qaRuns: parsed.qaRuns ?? [],
         sourceTexts: parsed.sourceTexts ?? {},
         processingWarnings: parsed.processingWarnings ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
-        return { documents: [], pages: [], chunks: [], sourceTexts: {}, processingWarnings: {} };
+        return { documents: [], pages: [], chunks: [], qaRuns: [], sourceTexts: {}, processingWarnings: {} };
       }
       throw error;
     }

@@ -132,6 +132,55 @@ describe("app server", () => {
     expect(reindexed.processing.indexedStatus).toBe("complete");
     await close();
   });
+
+  it("answers project document questions and logs QA runs", async () => {
+    const { baseUrl, close } = await startTestServer();
+
+    const createResponse = await fetch(`${baseUrl}/api/projects/project-qa/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalFilename: "Utility Easement.pdf",
+        sourceText:
+          "Utility easement affecting the property with access rights, maintenance rights, and recording information for the benefited parcel. This text is intentionally long enough to be treated as complete by the mock parser so retrieval and cited QA can run over a persisted chunk.",
+      }),
+    });
+    expect(createResponse.status).toBe(201);
+
+    const workerResponse = await fetch(`${baseUrl}/api/admin/document-worker/run`, { method: "POST" });
+    expect(workerResponse.status).toBe(200);
+
+    const qaResponse = await fetch(`${baseUrl}/api/projects/project-qa/document-qa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        question: "What affects the property?",
+        topK: 4,
+      }),
+    });
+    const qaBody = (await qaResponse.json()) as {
+      answer: string;
+      citations: Array<{ chunkId: string }>;
+      modelName: string;
+    };
+
+    expect(qaResponse.status).toBe(200);
+    expect(qaBody.answer).toContain("Mock answer from retrieved context");
+    expect(qaBody.citations.length).toBeGreaterThan(0);
+    expect(qaBody.modelName).toBe("mock-llm");
+
+    const runsResponse = await fetch(`${baseUrl}/api/projects/project-qa/document-qa-runs`);
+    const runsBody = (await runsResponse.json()) as {
+      runs: Array<{ question: string; citedChunkIds: string[] }>;
+    };
+
+    expect(runsResponse.status).toBe(200);
+    expect(runsBody.runs).toHaveLength(1);
+    expect(runsBody.runs[0]?.question).toBe("What affects the property?");
+    expect(runsBody.runs[0]?.citedChunkIds.length).toBeGreaterThan(0);
+
+    await close();
+  });
 });
 
 async function startTestServer() {
