@@ -5,7 +5,24 @@ describe("document intelligence scaffold", () => {
   it("instantiates all services", () => {
     const module = createDocumentIntelligenceModule({
       provider: "mock",
-      modelName: "mock-llm",
+      defaultTemperature: 0.1,
+      defaultMaxTokens: 1200,
+      timeoutMs: 120000,
+      runpod: {
+        baseUrl: null,
+        apiKey: null,
+        modelName: "Qwen/Qwen2.5-7B-Instruct",
+      },
+      openai: {
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: null,
+        modelName: "gpt-4o-mini",
+      },
+      local: {
+        baseUrl: "http://localhost:8000/v1",
+        apiKey: "local-dev-key",
+        modelName: "local-dev-model",
+      },
     });
 
     expect(module.ingestionService).toBeDefined();
@@ -20,7 +37,24 @@ describe("document intelligence scaffold", () => {
   it("retrieves matching chunks for query terms", () => {
     const module = createDocumentIntelligenceModule({
       provider: "mock",
-      modelName: "mock-llm",
+      defaultTemperature: 0.1,
+      defaultMaxTokens: 1200,
+      timeoutMs: 120000,
+      runpod: {
+        baseUrl: null,
+        apiKey: null,
+        modelName: "Qwen/Qwen2.5-7B-Instruct",
+      },
+      openai: {
+        baseUrl: "https://api.openai.com/v1",
+        apiKey: null,
+        modelName: "gpt-4o-mini",
+      },
+      local: {
+        baseUrl: "http://localhost:8000/v1",
+        apiKey: "local-dev-key",
+        modelName: "local-dev-model",
+      },
     });
 
     const chunks = [

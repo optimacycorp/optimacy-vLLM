@@ -1,8 +1,14 @@
 import http from "node:http";
+import { pathToFileURL } from "node:url";
+import { createLlmClient } from "./modules/llm/createLlmClient.js";
+import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
 
 const port = Number(process.env.PORT ?? 3000);
 
-const startupPage = `<!doctype html>
+function buildStartupPage() {
+  const status = getLlmProviderStatus();
+
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -27,7 +33,7 @@ const startupPage = `<!doctype html>
       color: var(--ink);
     }
     main {
-      max-width: 860px;
+      max-width: 920px;
       margin: 72px auto;
       padding: 32px;
     }
@@ -83,6 +89,9 @@ const startupPage = `<!doctype html>
       margin-bottom: 8px;
       color: var(--ink);
     }
+    code {
+      font-family: Consolas, monospace;
+    }
   </style>
 </head>
 <body>
@@ -90,46 +99,141 @@ const startupPage = `<!doctype html>
     <section class="card">
       <p class="eyebrow">Optimacy Geomatics Services LLC</p>
       <h1>Colorado geomatics support with a live deployment foothold.</h1>
-      <p>This RackNerd instance is now serving the startup page for the Optimacy portal. The document-intelligence API and provider switching work are being wired in next.</p>
-      <p>When you can see this page on waymail.net, Nginx to Node proxying is healthy and the server runtime is up.</p>
+      <p>The live app now exposes runtime AI status endpoints alongside the startup page, so we can validate provider mode before wiring real document upload and retrieval flows.</p>
+      <p>When you can see this page and hit the JSON endpoints below, Nginx to Node proxying is healthy and the server runtime is up.</p>
       <span class="status">Startup service online on port ${port}</span>
       <div class="grid">
         <div class="tile">
           <strong>Current mode</strong>
-          <span>${process.env.LLM_PROVIDER ?? "mock"}</span>
+          <span>${status.llmProvider}</span>
+        </div>
+        <div class="tile">
+          <strong>Model</strong>
+          <span>${status.modelName}</span>
         </div>
         <div class="tile">
           <strong>Health endpoint</strong>
           <span><code>/health</code></span>
         </div>
         <div class="tile">
-          <strong>Next sprint</strong>
-          <span>Provider switch, admin AI settings, upload pipeline</span>
+          <strong>Admin runtime API</strong>
+          <span><code>/api/admin/ai-settings</code></span>
         </div>
       </div>
     </section>
   </main>
 </body>
 </html>`;
+}
 
-const server = http.createServer((request, response) => {
-  if (request.url === "/health") {
-    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-    response.end(
-      JSON.stringify({
-        status: "ok",
-        service: "waymail-portal",
-        port,
-        llmProvider: process.env.LLM_PROVIDER ?? "mock",
-      }),
-    );
-    return;
+async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
 
-  response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  response.end(startupPage);
-});
+  const raw = Buffer.concat(chunks).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Waymail portal listening on http://0.0.0.0:${port}`);
-});
+function writeJson(response: http.ServerResponse, statusCode: number, payload: unknown) {
+  response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(payload));
+}
+
+function isAuthorized(request: http.IncomingMessage): boolean {
+  const configuredToken = process.env.ADMIN_API_TOKEN;
+  if (!configuredToken) {
+    return true;
+  }
+
+  const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+  return bearer === configuredToken || request.headers["x-admin-token"] === configuredToken;
+}
+
+export function createAppServer() {
+  return http.createServer(async (request, response) => {
+    try {
+      if (!request.url || !request.method) {
+        writeJson(response, 400, { error: "Invalid request" });
+        return;
+      }
+
+      if (request.url === "/health" && request.method === "GET") {
+        writeJson(response, 200, {
+          status: "ok",
+          service: "waymail-portal",
+          port,
+          llmProvider: getLlmProviderStatus().llmProvider,
+        });
+        return;
+      }
+
+      if (request.url === "/api/admin/ai-settings" && request.method === "GET") {
+        if (!isAuthorized(request)) {
+          writeJson(response, 403, { error: "Forbidden" });
+          return;
+        }
+
+        writeJson(response, 200, getLlmProviderStatus());
+        return;
+      }
+
+      if (request.url === "/api/admin/ai-settings/test" && request.method === "POST") {
+        if (!isAuthorized(request)) {
+          writeJson(response, 403, { error: "Forbidden" });
+          return;
+        }
+
+        const body = (await readJsonBody(request)) as { prompt?: string };
+        const prompt = body.prompt?.trim();
+        if (!prompt) {
+          writeJson(response, 400, { error: "A prompt is required." });
+          return;
+        }
+
+        const llmConfig = loadLlmConfig();
+        const client = createLlmClient(llmConfig);
+        const result = await client.chat({
+          system: "Respond briefly. Return JSON when asked for JSON.",
+          messages: [{ role: "user", content: prompt }],
+          responseFormat: /json/i.test(prompt) ? "json" : "text",
+          metadata: { promptVersion: "admin-ai-settings-test-v1" },
+        });
+
+        writeJson(response, 200, {
+          provider: result.provider,
+          modelName: result.modelName,
+          latencyMs: result.latencyMs,
+          text: result.text,
+          jsonValid: result.json !== undefined,
+        });
+        return;
+      }
+
+      if (request.url === "/" && request.method === "GET") {
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end(buildStartupPage());
+        return;
+      }
+
+      writeJson(response, 404, { error: "Not found" });
+    } catch (error) {
+      console.error("Unhandled request error", error);
+      writeJson(response, 500, { error: "Internal server error" });
+    }
+  });
+}
+
+export function startAppServer(server = createAppServer()) {
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Waymail portal listening on http://0.0.0.0:${port}`);
+  });
+
+  return server;
+}
+
+const isEntrypoint = process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isEntrypoint) {
+  startAppServer();
+}

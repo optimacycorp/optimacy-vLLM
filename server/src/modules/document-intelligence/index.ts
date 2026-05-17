@@ -1,5 +1,6 @@
 import { createLlmClient } from "../llm/llmClient.js";
-import type { LlmClientConfig } from "../llm/types.js";
+import { loadLlmConfig } from "../llm/llmConfig.js";
+import type { LlmRuntimeConfig } from "../llm/types.js";
 import { DocumentChunkingService } from "./documentChunkingService.js";
 import { DocumentExtractionService } from "./documentExtractionService.js";
 import { DocumentIngestionService } from "./documentIngestionService.js";
@@ -21,7 +22,7 @@ export * from "./schemas/easementSchema.js";
 export * from "./schemas/titleCommitmentSchema.js";
 export * from "./types.js";
 
-export function createDocumentIntelligenceModule(config: LlmClientConfig) {
+export function createDocumentIntelligenceModule(config: LlmRuntimeConfig = loadLlmConfig()) {
   const llmClient = createLlmClient(config);
   const ingestionService = new DocumentIngestionService();
   const parsingService = new DocumentParsingService();

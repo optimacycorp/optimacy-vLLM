@@ -1,52 +1,32 @@
-import type { z } from "zod";
-import type { JsonGenerationResult, LlmClient, TextGenerationResult } from "./types.js";
+import type { LlmChatInput, LlmChatResult, LlmClient } from "./types.js";
 
 export class MockLlmClient implements LlmClient {
-  constructor(private readonly modelName = "mock-llm") {}
-
-  async generateJson<TSchema extends z.ZodTypeAny>(args: {
-    systemPrompt: string;
-    userPrompt: string;
-    schema: TSchema;
-    maxTokens?: number;
-    temperature?: number;
-  }): Promise<JsonGenerationResult<z.infer<TSchema>>> {
+  async chat(input: LlmChatInput): Promise<LlmChatResult> {
     const startedAt = Date.now();
-    const candidate = this.buildMockJson(args.userPrompt);
-    const data = args.schema.parse(candidate);
+    const lastMessage = input.messages.at(-1)?.content ?? "";
+    const text =
+      input.responseFormat === "json"
+        ? JSON.stringify(this.buildMockJson(lastMessage))
+        : `Mock answer grounded in provided context for: ${lastMessage.slice(0, 120)}`;
 
     return {
-      data,
-      modelName: this.modelName,
+      text,
+      json: input.responseFormat === "json" ? this.tryParseJson(text) : undefined,
+      modelName: "mock-llm",
+      provider: "mock",
       latencyMs: Date.now() - startedAt,
-      rawText: JSON.stringify(candidate),
-      usage: {
-        promptTokens: Math.ceil((args.systemPrompt.length + args.userPrompt.length) / 4),
-        completionTokens: Math.ceil(JSON.stringify(candidate).length / 4),
-      },
+      promptTokens: Math.ceil((input.system?.length ?? 0 + lastMessage.length) / 4),
+      completionTokens: Math.ceil(text.length / 4),
+      raw: { mocked: true },
     };
   }
 
-  async generateText(args: {
-    systemPrompt: string;
-    userPrompt: string;
-    maxTokens?: number;
-    temperature?: number;
-  }): Promise<TextGenerationResult> {
-    const startedAt = Date.now();
-    return {
-      text: `Mock answer grounded in provided context for: ${args.userPrompt.slice(0, 120)}`,
-      modelName: this.modelName,
-      latencyMs: Date.now() - startedAt,
-      usage: {
-        promptTokens: Math.ceil((args.systemPrompt.length + args.userPrompt.length) / 4),
-        completionTokens: 32,
-      },
-    };
-  }
+  private buildMockJson(prompt: string): unknown {
+    if (/status ok/i.test(prompt)) {
+      return { status: "ok" };
+    }
 
-  private buildMockJson(userPrompt: string): unknown {
-    if (/commitment/i.test(userPrompt)) {
+    if (/commitment/i.test(prompt)) {
       return {
         commitmentNumber: null,
         effectiveDate: null,
@@ -61,7 +41,7 @@ export class MockLlmClient implements LlmClient {
       };
     }
 
-    if (/easement/i.test(userPrompt)) {
+    if (/easement/i.test(prompt)) {
       return {
         documentType: "easement",
         grantor: [],
@@ -81,7 +61,7 @@ export class MockLlmClient implements LlmClient {
       };
     }
 
-    if (/question:/i.test(userPrompt)) {
+    if (/question:/i.test(prompt)) {
       return {
         answer: "I do not have enough information in the uploaded documents.",
         warnings: ["Mock QA mode does not synthesize document facts."],
@@ -104,5 +84,13 @@ export class MockLlmClient implements LlmClient {
       exceptions: [],
       warnings: ["Mock extraction generated without source document review."],
     };
+  }
+
+  private tryParseJson(text: string): unknown {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return undefined;
+    }
   }
 }

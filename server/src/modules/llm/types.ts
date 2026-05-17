@@ -1,48 +1,63 @@
-import type { z } from "zod";
+export type LlmProvider = "mock" | "runpod" | "openai" | "local";
+export type LlmMessageRole = "system" | "user" | "assistant";
+export type LlmResponseFormat = "text" | "json";
 
-export interface LlmUsage {
+export interface LlmChatMessage {
+  role: LlmMessageRole;
+  content: string;
+}
+
+export interface LlmChatInput {
+  system?: string;
+  messages: LlmChatMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  responseFormat?: LlmResponseFormat;
+  metadata?: Record<string, unknown>;
+}
+
+export interface LlmChatResult {
+  text: string;
+  json?: unknown;
+  modelName: string;
+  provider: LlmProvider;
+  latencyMs: number;
   promptTokens?: number;
   completionTokens?: number;
-  totalTokens?: number;
-}
-
-export interface JsonGenerationResult<T> {
-  data: T;
-  modelName: string;
-  latencyMs: number;
-  usage?: LlmUsage;
-  rawText: string;
-}
-
-export interface TextGenerationResult {
-  text: string;
-  modelName: string;
-  latencyMs: number;
-  usage?: LlmUsage;
+  raw?: unknown;
 }
 
 export interface LlmClient {
-  generateJson<TSchema extends z.ZodTypeAny>(args: {
-    systemPrompt: string;
-    userPrompt: string;
-    schema: TSchema;
-    maxTokens?: number;
-    temperature?: number;
-  }): Promise<JsonGenerationResult<z.infer<TSchema>>>;
-  generateText(args: {
-    systemPrompt: string;
-    userPrompt: string;
-    maxTokens?: number;
-    temperature?: number;
-  }): Promise<TextGenerationResult>;
+  chat(input: LlmChatInput): Promise<LlmChatResult>;
 }
 
-export interface LlmClientConfig {
-  provider: "mock" | "vllm" | "openai";
-  baseUrl?: string;
-  apiKey?: string;
+export interface LlmRuntimeConfig {
+  provider: LlmProvider;
+  defaultTemperature: number;
+  defaultMaxTokens: number;
+  timeoutMs: number;
+  runpod: {
+    baseUrl: string | null;
+    apiKey: string | null;
+    modelName: string;
+  };
+  openai: {
+    baseUrl: string | null;
+    apiKey: string | null;
+    modelName: string;
+  };
+  local: {
+    baseUrl: string;
+    apiKey: string | null;
+    modelName: string;
+  };
+}
+
+export interface LlmProviderStatus {
+  llmProvider: LlmProvider;
   modelName: string;
-  timeoutMs?: number;
-  maxTokens?: number;
-  temperature?: number;
+  baseUrlConfigured: boolean;
+  embeddingProvider: string;
+  aiExtractionEnabled: boolean;
+  ragQaEnabled: boolean;
 }

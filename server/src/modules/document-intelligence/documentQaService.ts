@@ -35,15 +35,16 @@ export class DocumentQaService {
       ),
     ].join("\n");
 
-    const result = await this.llmClient.generateJson({
-      systemPrompt: surveyReviewQaPrompt,
-      userPrompt: prompt,
-      schema: documentQaSchema,
+    const result = await this.llmClient.chat({
+      system: surveyReviewQaPrompt,
+      messages: [{ role: "user", content: prompt }],
+      responseFormat: "json",
     });
+    const parsed = documentQaSchema.parse(result.json ?? this.parseJsonText(result.text, result));
 
     return {
-      answer: result.data.answer,
-      citations: result.data.citations
+      answer: parsed.answer,
+      citations: parsed.citations
         .map((citation) => retrieved.find((chunk) => chunk.id === citation.chunkId))
         .filter((chunk): chunk is NonNullable<typeof chunk> => Boolean(chunk))
         .map((chunk) => ({
@@ -53,9 +54,22 @@ export class DocumentQaService {
           pageEnd: chunk.pageEnd,
           chunkId: chunk.id,
         })),
-      warnings: result.data.warnings,
+      warnings: parsed.warnings,
       modelName: result.modelName,
       latencyMs: Date.now() - startedAt,
     };
+  }
+
+  private parseJsonText(resultText: string, result: { provider: string; modelName: string }): unknown {
+    try {
+      return JSON.parse(resultText);
+    } catch (error) {
+      console.error("Malformed JSON returned by QA provider", {
+        provider: result.provider,
+        modelName: result.modelName,
+        error,
+      });
+      throw error;
+    }
   }
 }

@@ -12,11 +12,12 @@ export class DocumentExtractionService {
   constructor(private readonly llmClient: LlmClient) {}
 
   async extractTitleCommitment(documentId: string, chunks: DocumentChunk[]): Promise<DocumentExtractionRecord> {
-    const result = await this.llmClient.generateJson({
-      systemPrompt: titleCommitmentExtractionPrompt,
-      userPrompt: this.buildContextPrompt("title commitment", chunks),
-      schema: titleCommitmentSchema,
+    const result = await this.llmClient.chat({
+      system: titleCommitmentExtractionPrompt,
+      messages: [{ role: "user", content: this.buildContextPrompt("title commitment", chunks) }],
+      responseFormat: "json",
     });
+    const parsed = titleCommitmentSchema.parse(result.json ?? this.parseJsonText(result.text, "title_commitment", result));
 
     return {
       id: randomUUID(),
@@ -24,19 +25,20 @@ export class DocumentExtractionService {
       extractionType: "title_commitment",
       modelName: result.modelName,
       schemaVersion: "1.0.0",
-      extractedJson: result.data,
-      warnings: result.data.warnings,
+      extractedJson: parsed,
+      warnings: parsed.warnings,
       confidence: null,
       createdAt: new Date().toISOString(),
     };
   }
 
   async extractDeed(documentId: string, chunks: DocumentChunk[]): Promise<DocumentExtractionRecord> {
-    const result = await this.llmClient.generateJson({
-      systemPrompt: deedExtractionPrompt,
-      userPrompt: this.buildContextPrompt("deed", chunks),
-      schema: deedSchema,
+    const result = await this.llmClient.chat({
+      system: deedExtractionPrompt,
+      messages: [{ role: "user", content: this.buildContextPrompt("deed", chunks) }],
+      responseFormat: "json",
     });
+    const parsed = deedSchema.parse(result.json ?? this.parseJsonText(result.text, "deed", result));
 
     return {
       id: randomUUID(),
@@ -44,19 +46,20 @@ export class DocumentExtractionService {
       extractionType: "deed",
       modelName: result.modelName,
       schemaVersion: "1.0.0",
-      extractedJson: result.data,
-      warnings: result.data.warnings,
+      extractedJson: parsed,
+      warnings: parsed.warnings,
       confidence: null,
       createdAt: new Date().toISOString(),
     };
   }
 
   async extractEasement(documentId: string, chunks: DocumentChunk[]): Promise<DocumentExtractionRecord> {
-    const result = await this.llmClient.generateJson({
-      systemPrompt: easementExtractionPrompt,
-      userPrompt: this.buildContextPrompt("easement", chunks),
-      schema: easementSchema,
+    const result = await this.llmClient.chat({
+      system: easementExtractionPrompt,
+      messages: [{ role: "user", content: this.buildContextPrompt("easement", chunks) }],
+      responseFormat: "json",
     });
+    const parsed = easementSchema.parse(result.json ?? this.parseJsonText(result.text, "easement", result));
 
     return {
       id: randomUUID(),
@@ -64,8 +67,8 @@ export class DocumentExtractionService {
       extractionType: "easement",
       modelName: result.modelName,
       schemaVersion: "1.0.0",
-      extractedJson: result.data,
-      warnings: result.data.warnings,
+      extractedJson: parsed,
+      warnings: parsed.warnings,
       confidence: null,
       createdAt: new Date().toISOString(),
     };
@@ -77,5 +80,19 @@ export class DocumentExtractionService {
       .join("\n\n");
 
     return `Extract structured ${label} data from the following document context:\n\n${serializedChunks}`;
+  }
+
+  private parseJsonText(resultText: string, extractionType: string, result: { provider: string; modelName: string }): unknown {
+    try {
+      return JSON.parse(resultText);
+    } catch (error) {
+      console.error("Malformed JSON returned by extraction provider", {
+        extractionType,
+        provider: result.provider,
+        modelName: result.modelName,
+        error,
+      });
+      throw error;
+    }
   }
 }
