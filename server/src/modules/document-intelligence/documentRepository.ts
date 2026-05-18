@@ -24,6 +24,17 @@ interface DocumentStoreShape {
   processingWarnings: Record<string, string[]>;
 }
 
+export interface ProjectDocumentExport {
+  documents: ProjectDocument[];
+  pages: DocumentPage[];
+  chunks: DocumentChunk[];
+  extractions: DocumentExtractionRecord[];
+  findings: DocumentAiFindingRecord[];
+  qaRuns: DocumentQaRunRecord[];
+  sourceTexts: Record<string, string>;
+  processingWarnings: Record<string, string[]>;
+}
+
 interface UpdateDocumentStatusesInput {
   parsedStatus?: ProcessingStatus;
   extractionStatus?: ProcessingStatus;
@@ -59,6 +70,7 @@ export interface ProjectDocumentRepository {
   getProcessingWarnings(documentId: string): Promise<string[]>;
   createQaRun(run: Omit<DocumentQaRunRecord, "id" | "createdAt">): Promise<DocumentQaRunRecord>;
   listQaRunsByProjectId(projectId: string): Promise<DocumentQaRunRecord[]>;
+  exportProjectData(projectId: string): Promise<ProjectDocumentExport>;
   listPendingParseDocuments(): Promise<ProjectDocument[]>;
   listPendingIndexDocuments(): Promise<ProjectDocument[]>;
 }
@@ -242,6 +254,32 @@ export class FileProjectDocumentRepository implements ProjectDocumentRepository 
     return store.qaRuns
       .filter((run) => run.projectId === projectId)
       .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  }
+
+  async exportProjectData(projectId: string): Promise<ProjectDocumentExport> {
+    const store = await this.readStore();
+    const documents = store.documents
+      .filter((document) => document.projectId === projectId)
+      .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
+    const documentIds = new Set(documents.map((document) => document.id));
+
+    const sourceTexts = Object.fromEntries(
+      Object.entries(store.sourceTexts).filter(([documentId]) => documentIds.has(documentId)),
+    );
+    const processingWarnings = Object.fromEntries(
+      Object.entries(store.processingWarnings).filter(([documentId]) => documentIds.has(documentId)),
+    );
+
+    return {
+      documents,
+      pages: store.pages.filter((page) => documentIds.has(page.documentId)),
+      chunks: store.chunks.filter((chunk) => documentIds.has(chunk.documentId)),
+      extractions: store.extractions.filter((extraction) => documentIds.has(extraction.documentId)),
+      findings: store.findings.filter((finding) => finding.documentId != null && documentIds.has(finding.documentId)),
+      qaRuns: store.qaRuns.filter((run) => run.projectId === projectId),
+      sourceTexts,
+      processingWarnings,
+    };
   }
 
   async listPendingParseDocuments(): Promise<ProjectDocument[]> {

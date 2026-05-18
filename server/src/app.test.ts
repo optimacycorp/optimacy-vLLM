@@ -97,6 +97,28 @@ describe("app server", () => {
     await close();
   });
 
+  it("returns stored source text for a document", async () => {
+    const { baseUrl, close } = await startTestServer();
+    const sourceText = "Recorded source text for inspection and migration export.";
+
+    const createResponse = await fetch(`${baseUrl}/api/projects/project-source/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalFilename: "Source Notes.txt",
+        sourceText,
+      }),
+    });
+    const created = (await createResponse.json()) as { document: { id: string } };
+
+    const sourceResponse = await fetch(`${baseUrl}/api/documents/${created.document.id}/source-text`);
+    const sourceBody = (await sourceResponse.json()) as { sourceText: string };
+
+    expect(sourceResponse.status).toBe(200);
+    expect(sourceBody.sourceText).toBe(sourceText);
+    await close();
+  });
+
   it("returns document detail and allows reparse and reindex transitions", async () => {
     const { baseUrl, close } = await startTestServer();
     const createResponse = await fetch(`${baseUrl}/api/projects/project-456/documents`, {
@@ -293,6 +315,41 @@ describe("app server", () => {
     expect(projectFindingsResponse.status).toBe(200);
     expect(projectFindingsBody.findings.length).toBeGreaterThan(0);
     expect(projectFindingsBody.findings[0]?.documentId).toBe(created.document.id);
+
+    await close();
+  });
+
+  it("exports a project's current persisted state as JSON", async () => {
+    const { baseUrl, close } = await startTestServer();
+
+    const createResponse = await fetch(`${baseUrl}/api/projects/project-export/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalFilename: "Export Deed.pdf",
+        sourceText:
+          "Warranty deed grantor grantee legal description recording information and enough content to parse, index, and support export. This additional text ensures the mock parser treats the source as complete, allowing chunking, extraction, and export of the full persisted project state for migration review.",
+      }),
+    });
+    const created = (await createResponse.json()) as { document: { id: string } };
+    expect(createResponse.status).toBe(201);
+
+    await fetch(`${baseUrl}/api/admin/document-worker/run`, { method: "POST" });
+    await fetch(`${baseUrl}/api/documents/${created.document.id}/extractions`, { method: "POST" });
+
+    const exportResponse = await fetch(`${baseUrl}/api/projects/project-export/export.json`);
+    const exportBody = (await exportResponse.json()) as {
+      documents: Array<{ id: string }>;
+      chunks: Array<{ documentId: string }>;
+      extractions: Array<{ documentId: string }>;
+      sourceTexts: Record<string, string>;
+    };
+
+    expect(exportResponse.status).toBe(200);
+    expect(exportBody.documents).toHaveLength(1);
+    expect(exportBody.chunks.length).toBeGreaterThan(0);
+    expect(exportBody.extractions.length).toBeGreaterThan(0);
+    expect(exportBody.sourceTexts[created.document.id]).toContain("Warranty deed");
 
     await close();
   });

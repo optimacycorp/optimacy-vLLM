@@ -285,6 +285,14 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         return;
       }
 
+      const projectExportMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/export\.json$/);
+      if (projectExportMatch && request.method === "GET") {
+        const [, projectId] = projectExportMatch;
+        const exportPayload = await projectDocumentRepository.exportProjectData(projectId);
+        writeJson(response, 200, exportPayload);
+        return;
+      }
+
       const projectQaMatch = matchRoute(pathname, /^\/api\/projects\/([^/]+)\/document-qa$/);
       if (projectQaMatch && request.method === "POST") {
         const [, projectId] = projectQaMatch;
@@ -371,6 +379,24 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         }
 
         writeJson(response, 200, detail);
+        return;
+      }
+
+      const documentSourceMatch = matchRoute(pathname, /^\/api\/documents\/([^/]+)\/source-text$/);
+      if (documentSourceMatch && request.method === "GET") {
+        const [, documentId] = documentSourceMatch;
+        const document = await projectDocumentRepository.getById(documentId);
+        if (!document) {
+          writeJson(response, 404, { error: "Document not found." });
+          return;
+        }
+
+        const sourceText = (await projectDocumentRepository.getSourceText(documentId)) ?? (await documentStorageService.readDocumentText(document.storagePath));
+        writeJson(response, 200, {
+          documentId,
+          storagePath: document.storagePath,
+          sourceText,
+        });
         return;
       }
 
