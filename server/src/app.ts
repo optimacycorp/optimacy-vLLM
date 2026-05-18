@@ -43,37 +43,45 @@ function buildStartupPage() {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Optimacy Geomatics</title>
+  <title>Optimacy Geomatics Document Console</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root {
       color-scheme: light;
-      --bg: #efe8db;
-      --panel: #ffffff;
-      --ink: #17323a;
-      --muted: #5f6c72;
-      --accent: #b86b32;
+      --bg: #f1eadf;
+      --panel: rgba(255, 255, 255, 0.94);
+      --ink: #19333a;
+      --muted: #5a676d;
+      --accent: #b76d34;
+      --accent-dark: #8f5124;
+      --border: rgba(25, 51, 58, 0.12);
+      --surface: #f8f5ef;
+      --success: #1f6d57;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Segoe UI", Arial, sans-serif;
       background:
-        radial-gradient(circle at top left, rgba(184, 107, 50, 0.18), transparent 30%),
-        linear-gradient(180deg, #f7f2e9 0%, var(--bg) 100%);
+        radial-gradient(circle at top left, rgba(183, 109, 52, 0.18), transparent 26%),
+        linear-gradient(180deg, #faf5eb 0%, var(--bg) 100%);
       color: var(--ink);
     }
     main {
-      max-width: 920px;
-      margin: 72px auto;
-      padding: 32px;
+      max-width: 1280px;
+      margin: 40px auto 64px;
+      padding: 24px;
     }
-    .card {
-      background: rgba(255, 255, 255, 0.92);
-      border: 1px solid rgba(23, 50, 58, 0.08);
+    .shell {
+      display: grid;
+      gap: 20px;
+    }
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--border);
       border-radius: 24px;
-      padding: 36px;
-      box-shadow: 0 18px 40px rgba(23, 50, 58, 0.08);
+      padding: 28px;
+      box-shadow: 0 18px 40px rgba(25, 51, 58, 0.08);
       backdrop-filter: blur(8px);
     }
     .eyebrow {
@@ -85,74 +93,546 @@ function buildStartupPage() {
     }
     h1 {
       margin: 0 0 12px;
-      font-size: clamp(2rem, 4vw, 3.8rem);
-      line-height: 1.05;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.04;
     }
     p {
       margin: 0 0 16px;
       color: var(--muted);
-      line-height: 1.7;
-      font-size: 1.05rem;
+      line-height: 1.65;
+      font-size: 1rem;
+    }
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 16px;
     }
     .status {
       display: inline-block;
-      margin-top: 12px;
       padding: 10px 14px;
       border-radius: 999px;
-      background: rgba(184, 107, 50, 0.12);
+      background: rgba(183, 109, 52, 0.12);
       color: var(--ink);
       font-weight: 600;
     }
-    .grid {
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+      align-items: start;
+    }
+    .panel-grid {
+      display: grid;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 22px;
+      box-shadow: 0 14px 30px rgba(25, 51, 58, 0.06);
+    }
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 1.25rem;
+    }
+    .subtle {
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+    .tile-row {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 14px;
-      margin-top: 28px;
+      gap: 12px;
+      margin-top: 18px;
     }
     .tile {
-      padding: 18px;
+      padding: 16px;
       border-radius: 16px;
-      background: #f8f6f1;
-      border: 1px solid rgba(23, 50, 58, 0.08);
+      background: var(--surface);
+      border: 1px solid var(--border);
     }
     .tile strong {
       display: block;
       margin-bottom: 8px;
       color: var(--ink);
     }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .field.full {
+      grid-column: 1 / -1;
+    }
+    label {
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--ink);
+      background: white;
+    }
+    textarea {
+      min-height: 132px;
+      resize: vertical;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 999px;
+      padding: 11px 16px;
+      font: inherit;
+      font-weight: 700;
+      color: white;
+      background: var(--accent);
+      cursor: pointer;
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    button:hover {
+      background: var(--accent-dark);
+      transform: translateY(-1px);
+    }
+    button.secondary {
+      background: #27424a;
+    }
+    button.ghost {
+      background: #dfe7e4;
+      color: var(--ink);
+    }
+    .doc-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+      max-height: 420px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .doc-card {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      background: var(--surface);
+      cursor: pointer;
+    }
+    .doc-card.selected {
+      border-color: rgba(183, 109, 52, 0.5);
+      box-shadow: inset 0 0 0 1px rgba(183, 109, 52, 0.25);
+    }
+    .doc-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(25, 51, 58, 0.08);
+      font-size: 0.84rem;
+    }
+    .result {
+      margin-top: 14px;
+      border-radius: 18px;
+      background: #101b20;
+      color: #e9f2ef;
+      padding: 16px;
+      min-height: 520px;
+      overflow: auto;
+      white-space: pre-wrap;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+    .hint {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(31, 109, 87, 0.08);
+      color: var(--success);
+      font-size: 0.92rem;
+    }
     code {
       font-family: Consolas, monospace;
+    }
+    @media (max-width: 980px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
 <body>
   <main>
-    <section class="card">
-      <p class="eyebrow">Optimacy Geomatics Services LLC</p>
-      <h1>Colorado geomatics support with a live deployment foothold.</h1>
-      <p>The live app now exposes runtime AI status endpoints alongside the startup page, so we can validate provider mode before wiring real document upload and retrieval flows.</p>
-      <p>When you can see this page and hit the JSON endpoints below, Nginx to Node proxying is healthy and the server runtime is up.</p>
-      <span class="status">Startup service online on port ${port}</span>
-      <div class="grid">
-        <div class="tile">
-          <strong>Current mode</strong>
-          <span>${status.llmProvider}</span>
+    <div class="shell">
+      <section class="hero">
+        <p class="eyebrow">Optimacy Geomatics Services LLC</p>
+        <h1>Document Intelligence Mock Console</h1>
+        <p>This page lets you upload a document, run the worker, inspect parsed results, call QA and extraction endpoints, and verify the local or Supabase backend wiring from the browser on RackNerd.</p>
+        <div class="status-row">
+          <span class="status">Portal online on port ${port}</span>
+          <span class="status">LLM provider: ${status.llmProvider}</span>
+          <span class="status">Model: ${status.modelName}</span>
         </div>
-        <div class="tile">
-          <strong>Model</strong>
-          <span>${status.modelName}</span>
+        <div class="tile-row">
+          <div class="tile">
+            <strong>Mock-friendly workflow</strong>
+            <span>Upload, process, inspect, QA, extract, and review findings without GPU spend.</span>
+          </div>
+          <div class="tile">
+            <strong>Project default</strong>
+            <span><code>demo-project</code> is prefilled, but you can switch projects at any time.</span>
+          </div>
+          <div class="tile">
+            <strong>Admin routes</strong>
+            <span>Provide an admin token below only if your server has <code>ADMIN_API_TOKEN</code> enabled.</span>
+          </div>
         </div>
-        <div class="tile">
-          <strong>Health endpoint</strong>
-          <span><code>/health</code></span>
+      </section>
+
+      <section class="dashboard">
+        <div class="panel-grid">
+          <section class="panel">
+            <h2>Runtime Checks</h2>
+            <p class="subtle">Use these first to confirm the live environment is healthy before testing document flows.</p>
+            <div class="form-grid">
+              <div class="field">
+                <label for="projectId">Project ID</label>
+                <input id="projectId" value="demo-project" />
+              </div>
+              <div class="field">
+                <label for="adminToken">Admin Token (optional)</label>
+                <input id="adminToken" type="password" placeholder="Only needed if ADMIN_API_TOKEN is set" />
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" data-action="health">Health</button>
+              <button type="button" data-action="ai-settings">AI Settings</button>
+              <button type="button" data-action="backend-status">Backend Status</button>
+              <button type="button" data-action="run-worker" class="secondary">Run Worker</button>
+              <button type="button" data-action="list-docs" class="ghost">Refresh Documents</button>
+            </div>
+            <div class="hint">Tip: if backend status shows storage healthy and AI settings show <code>mock</code>, you have a solid RackNerd mock baseline.</div>
+          </section>
+
+          <section class="panel">
+            <h2>Upload Document</h2>
+            <p class="subtle">Use either a real file upload or paste source text directly for a fast mock test.</p>
+            <form id="uploadForm">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="originalFilename">Original Filename</label>
+                  <input id="originalFilename" placeholder="Title Commitment.pdf" />
+                </div>
+                <div class="field">
+                  <label for="documentTitle">Document Title</label>
+                  <input id="documentTitle" placeholder="Optional display title" />
+                </div>
+                <div class="field">
+                  <label for="mimeType">MIME Type</label>
+                  <input id="mimeType" placeholder="text/plain or application/pdf" />
+                </div>
+                <div class="field">
+                  <label for="fileInput">Upload File</label>
+                  <input id="fileInput" type="file" />
+                </div>
+                <div class="field full">
+                  <label for="sourceText">Source Text</label>
+                  <textarea id="sourceText" placeholder="Paste mock title, deed, easement, or survey text here if you are not uploading a file."></textarea>
+                </div>
+              </div>
+              <div class="actions">
+                <button type="submit">Upload Document</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel">
+            <h2>Project QA</h2>
+            <p class="subtle">Run a grounded mock question over the current project documents after processing.</p>
+            <div class="form-grid">
+              <div class="field full">
+                <label for="qaQuestion">Question</label>
+                <textarea id="qaQuestion">What affects the property?</textarea>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" data-action="run-qa">Run QA</button>
+              <button type="button" data-action="qa-runs" class="ghost">View QA Runs</button>
+              <button type="button" data-action="export-project" class="ghost">Export Project JSON</button>
+            </div>
+          </section>
         </div>
-        <div class="tile">
-          <strong>Admin runtime API</strong>
-          <span><code>/api/admin/ai-settings</code></span>
+
+        <div class="panel-grid">
+          <section class="panel">
+            <h2>Documents</h2>
+            <p class="subtle">Click a document below to target detail, source, extraction, and findings actions.</p>
+            <div class="actions">
+              <button type="button" data-action="doc-detail" class="secondary">Document Detail</button>
+              <button type="button" data-action="doc-source" class="ghost">Source Text</button>
+              <button type="button" data-action="doc-extract">Run Extraction</button>
+              <button type="button" data-action="doc-findings" class="ghost">View Findings</button>
+            </div>
+            <div id="docList" class="doc-list"></div>
+          </section>
+
+          <section class="panel">
+            <h2>API Results</h2>
+            <p class="subtle">All responses are shown here so you can verify route behavior without leaving the page.</p>
+            <div id="result" class="result">Ready. Start with Health, AI Settings, or Upload Document.</div>
+          </section>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   </main>
+  <script>
+    const state = {
+      selectedDocumentId: null,
+      documents: [],
+    };
+
+    const els = {
+      projectId: document.getElementById("projectId"),
+      adminToken: document.getElementById("adminToken"),
+      originalFilename: document.getElementById("originalFilename"),
+      documentTitle: document.getElementById("documentTitle"),
+      mimeType: document.getElementById("mimeType"),
+      fileInput: document.getElementById("fileInput"),
+      sourceText: document.getElementById("sourceText"),
+      qaQuestion: document.getElementById("qaQuestion"),
+      uploadForm: document.getElementById("uploadForm"),
+      result: document.getElementById("result"),
+      docList: document.getElementById("docList"),
+    };
+
+    function getProjectId() {
+      return (els.projectId.value || "demo-project").trim();
+    }
+
+    function getAdminHeaders() {
+      const token = els.adminToken.value.trim();
+      return token ? { Authorization: \`Bearer \${token}\` } : {};
+    }
+
+    function renderResult(label, payload) {
+      els.result.textContent = label + "\\n\\n" + JSON.stringify(payload, null, 2);
+    }
+
+    function renderError(label, error) {
+      const message = error instanceof Error ? error.message : String(error);
+      els.result.textContent = label + "\\n\\n" + message;
+    }
+
+    async function requestJson(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...(options.headers || {}),
+          ...getAdminHeaders(),
+        },
+      });
+
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        payload = { status: response.status, text: await response.text() };
+      }
+
+      if (!response.ok) {
+        throw new Error(JSON.stringify(payload, null, 2));
+      }
+
+      return payload;
+    }
+
+    function renderDocuments() {
+      if (state.documents.length === 0) {
+        els.docList.innerHTML = '<div class="doc-card">No documents yet for this project.</div>';
+        return;
+      }
+
+      els.docList.innerHTML = state.documents.map((document) => {
+        const selected = state.selectedDocumentId === document.id ? "selected" : "";
+        return \`
+          <button type="button" class="doc-card \${selected}" data-document-id="\${document.id}">
+            <strong>\${document.originalFilename}</strong>
+            <div class="subtle">\${document.documentType || "unknown"}</div>
+            <div class="doc-meta">
+              <span class="badge">parsed: \${document.parsedStatus}</span>
+              <span class="badge">indexed: \${document.indexedStatus}</span>
+              <span class="badge">extracted: \${document.extractionStatus}</span>
+            </div>
+          </button>
+        \`;
+      }).join("");
+
+      for (const button of els.docList.querySelectorAll("[data-document-id]")) {
+        button.addEventListener("click", () => {
+          state.selectedDocumentId = button.getAttribute("data-document-id");
+          renderDocuments();
+        });
+      }
+    }
+
+    async function refreshDocuments() {
+      const payload = await requestJson(\`/api/projects/\${encodeURIComponent(getProjectId())}/documents\`);
+      state.documents = payload.documents || [];
+      if (!state.selectedDocumentId && state.documents[0]) {
+        state.selectedDocumentId = state.documents[0].id;
+      } else if (state.selectedDocumentId && !state.documents.find((doc) => doc.id === state.selectedDocumentId)) {
+        state.selectedDocumentId = state.documents[0] ? state.documents[0].id : null;
+      }
+      renderDocuments();
+      renderResult("Project documents", payload);
+    }
+
+    function requireSelectedDocumentId() {
+      if (!state.selectedDocumentId) {
+        throw new Error("Select a document first.");
+      }
+      return state.selectedDocumentId;
+    }
+
+    async function runAction(action) {
+      try {
+        if (action === "health") {
+          renderResult("Health", await requestJson("/health"));
+          return;
+        }
+        if (action === "ai-settings") {
+          renderResult("AI settings", await requestJson("/api/admin/ai-settings"));
+          return;
+        }
+        if (action === "backend-status") {
+          renderResult("Document backend status", await requestJson("/api/admin/document-backend-status"));
+          return;
+        }
+        if (action === "run-worker") {
+          const payload = await requestJson("/api/admin/document-worker/run", { method: "POST" });
+          await refreshDocuments();
+          renderResult("Worker run", payload);
+          return;
+        }
+        if (action === "list-docs") {
+          await refreshDocuments();
+          return;
+        }
+        if (action === "run-qa") {
+          const payload = await requestJson(\`/api/projects/\${encodeURIComponent(getProjectId())}/document-qa\`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              question: els.qaQuestion.value.trim(),
+              topK: 4,
+            }),
+          });
+          renderResult("QA result", payload);
+          return;
+        }
+        if (action === "qa-runs") {
+          renderResult("QA runs", await requestJson(\`/api/projects/\${encodeURIComponent(getProjectId())}/document-qa-runs\`));
+          return;
+        }
+        if (action === "export-project") {
+          renderResult("Project export", await requestJson(\`/api/projects/\${encodeURIComponent(getProjectId())}/export.json\`));
+          return;
+        }
+
+        const documentId = requireSelectedDocumentId();
+        if (action === "doc-detail") {
+          renderResult("Document detail", await requestJson(\`/api/documents/\${documentId}\`));
+          return;
+        }
+        if (action === "doc-source") {
+          renderResult("Document source", await requestJson(\`/api/documents/\${documentId}/source-text\`));
+          return;
+        }
+        if (action === "doc-extract") {
+          renderResult("Document extraction", await requestJson(\`/api/documents/\${documentId}/extractions\`, { method: "POST" }));
+          await refreshDocuments();
+          return;
+        }
+        if (action === "doc-findings") {
+          renderResult("Document findings", await requestJson(\`/api/documents/\${documentId}/findings\`));
+        }
+      } catch (error) {
+        renderError(\`Action failed: \${action}\`, error);
+      }
+    }
+
+    els.uploadForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      try {
+        const file = els.fileInput.files && els.fileInput.files[0];
+        let payload;
+
+        if (file) {
+          const formData = new FormData();
+          if (els.originalFilename.value.trim()) {
+            formData.append("originalFilename", els.originalFilename.value.trim());
+          }
+          if (els.documentTitle.value.trim()) {
+            formData.append("title", els.documentTitle.value.trim());
+          }
+          if (els.mimeType.value.trim()) {
+            formData.append("mimeType", els.mimeType.value.trim());
+          }
+          formData.append("file", file, file.name);
+          payload = await requestJson(\`/api/projects/\${encodeURIComponent(getProjectId())}/documents\`, {
+            method: "POST",
+            body: formData,
+          });
+        } else {
+          payload = await requestJson(\`/api/projects/\${encodeURIComponent(getProjectId())}/documents\`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              originalFilename: els.originalFilename.value.trim() || "Mock Upload.txt",
+              title: els.documentTitle.value.trim() || null,
+              mimeType: els.mimeType.value.trim() || null,
+              sourceText: els.sourceText.value,
+            }),
+          });
+        }
+
+        await refreshDocuments();
+        renderResult("Upload result", payload);
+        els.fileInput.value = "";
+      } catch (error) {
+        renderError("Upload failed", error);
+      }
+    });
+
+    for (const button of document.querySelectorAll("[data-action]")) {
+      button.addEventListener("click", () => runAction(button.getAttribute("data-action")));
+    }
+
+    refreshDocuments().catch((error) => renderError("Initial document load failed", error));
+  </script>
 </body>
 </html>`;
 }

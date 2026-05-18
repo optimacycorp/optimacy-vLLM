@@ -37,6 +37,18 @@ describe("app server", () => {
     await close();
   });
 
+  it("serves the document intelligence console on the root page", async () => {
+    const { baseUrl, close } = await startTestServer();
+    const response = await fetch(baseUrl);
+    const html = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(html).toContain("Document Intelligence Mock Console");
+    expect(html).toContain("Upload Document");
+    expect(html).toContain("/api/admin/document-backend-status");
+    await close();
+  });
+
   it("returns document backend status", async () => {
     const { baseUrl, close } = await startTestServer();
     const response = await fetch(`${baseUrl}/api/admin/document-backend-status`);
