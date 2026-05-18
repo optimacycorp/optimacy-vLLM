@@ -10,10 +10,12 @@ import { DocumentRetrievalService } from "./documentRetrievalService.js";
 import { EvaluationService } from "./evaluationService.js";
 
 export * from "./documentChunkingService.js";
+export * from "./documentConfig.js";
 export * from "./documentExtractionService.js";
 export * from "./documentIngestionService.js";
 export * from "./documentPipelineService.js";
 export * from "./documentParsingService.js";
+export * from "./documentStorageService.js";
 export * from "./findingsService.js";
 export * from "./projectExtractionService.js";
 export * from "./projectQaService.js";

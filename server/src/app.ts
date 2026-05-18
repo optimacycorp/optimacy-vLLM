@@ -2,6 +2,7 @@ import http from "node:http";
 import { pathToFileURL } from "node:url";
 import { createLlmClient } from "./modules/llm/createLlmClient.js";
 import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
+import { createDocumentStorageService, type DocumentStorageService } from "./modules/document-intelligence/documentStorageService.js";
 import { DocumentPipelineService } from "./modules/document-intelligence/documentPipelineService.js";
 import { FindingsService } from "./modules/document-intelligence/findingsService.js";
 import { ProjectExtractionService } from "./modules/document-intelligence/projectExtractionService.js";
@@ -18,6 +19,8 @@ interface CreateDocumentRequestBody {
   storagePath?: string;
   firstPageText?: string;
   sourceText?: string;
+  fileBase64?: string;
+  mimeType?: string | null;
   title?: string | null;
   source?: string | null;
   recordingDate?: string | null;
@@ -184,11 +187,13 @@ function isAuthorized(request: http.IncomingMessage): boolean {
 
 interface AppServerDependencies {
   projectDocumentRepository?: ProjectDocumentRepository;
+  documentStorageService?: DocumentStorageService;
 }
 
 export function createAppServer(dependencies: AppServerDependencies = {}) {
   const projectDocumentRepository = dependencies.projectDocumentRepository ?? createProjectDocumentRepository();
-  const documentPipelineService = new DocumentPipelineService(projectDocumentRepository);
+  const documentStorageService = dependencies.documentStorageService ?? createDocumentStorageService();
+  const documentPipelineService = new DocumentPipelineService(projectDocumentRepository, undefined, undefined, documentStorageService);
   const llmClient = createLlmClient(loadLlmConfig());
   const findingsService = new FindingsService(projectDocumentRepository);
   const projectExtractionService = new ProjectExtractionService(projectDocumentRepository, llmClient);
@@ -321,11 +326,19 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
           return;
         }
 
+        const storedDocument = await documentStorageService.saveDocument({
+          projectId,
+          originalFilename,
+          sourceText: body.sourceText ?? body.firstPageText,
+          fileBase64: body.fileBase64,
+          mimeType: body.mimeType ?? null,
+        });
+
         const document = await projectDocumentRepository.create({
           projectId,
           originalFilename,
-          storagePath: body.storagePath?.trim() || `projects/${projectId}/${originalFilename}`,
-          firstPageText: body.sourceText ?? body.firstPageText,
+          storagePath: storedDocument.storagePath,
+          firstPageText: storedDocument.sourceText ?? undefined,
           title: body.title ?? null,
           source: body.source ?? null,
           recordingDate: body.recordingDate ?? null,
@@ -333,8 +346,8 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
           bookPage: body.bookPage ?? null,
         });
 
-        if (body.sourceText?.trim()) {
-          await projectDocumentRepository.setSourceText(document.id, body.sourceText);
+        if (storedDocument.sourceText?.trim()) {
+          await projectDocumentRepository.setSourceText(document.id, storedDocument.sourceText);
         }
 
         writeJson(response, 201, {

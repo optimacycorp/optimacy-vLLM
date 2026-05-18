@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { DocumentChunkingService } from "./documentChunkingService.js";
 import { DocumentParsingService } from "./documentParsingService.js";
+import { createDocumentStorageService, type DocumentStorageService } from "./documentStorageService.js";
 import type {
   DocumentChunk,
   DocumentPage,
@@ -14,6 +15,7 @@ export class DocumentPipelineService {
     private readonly repository: ProjectDocumentRepository,
     private readonly parsingService = new DocumentParsingService(),
     private readonly chunkingService = new DocumentChunkingService(),
+    private readonly storageService: DocumentStorageService = createDocumentStorageService(),
   ) {}
 
   async processDocument(documentId: string): Promise<DocumentProcessingSummary | null> {
@@ -71,7 +73,7 @@ export class DocumentPipelineService {
       return;
     }
 
-    const sourceText = await this.repository.getSourceText(document.id);
+    const sourceText = (await this.repository.getSourceText(document.id)) ?? (await this.storageService.readDocumentText(document.storagePath));
     const parsed = this.parsingService.parseTextPages(this.toPages(sourceText));
     const pages: DocumentPage[] = parsed.pages.map((page) => ({
       id: randomUUID(),

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -19,6 +19,7 @@ describe("app server", () => {
 
   beforeEach(async () => {
     await rm(path.join(tempDir, "project-documents.json"), { force: true });
+    await rm(path.join(tempDir, "storage"), { recursive: true, force: true });
   });
 
   afterAll(async () => {
@@ -73,6 +74,26 @@ describe("app server", () => {
     expect(listResponse.status).toBe(200);
     expect(listed.documents).toHaveLength(1);
     expect(listed.documents[0]?.id).toBe(created.document.id);
+    await close();
+  });
+
+  it("stores source content on disk when creating a document", async () => {
+    const { baseUrl, close } = await startTestServer();
+    const sourceText = "Boundary research notes and source content that should be written to local storage.";
+
+    const createResponse = await fetch(`${baseUrl}/api/projects/project-storage/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalFilename: "Research Notes.txt",
+        sourceText,
+      }),
+    });
+    const created = (await createResponse.json()) as { document: { storagePath: string } };
+
+    expect(createResponse.status).toBe(201);
+    const stored = await readFile(path.join(tempDir, "storage", created.document.storagePath), "utf8");
+    expect(stored).toBe(sourceText);
     await close();
   });
 
@@ -279,6 +300,7 @@ describe("app server", () => {
 
 async function startTestServer() {
   const storePath = path.join(tempDir, "project-documents.json");
+  process.env.DOCUMENT_STORAGE_ROOT = path.join(tempDir, "storage");
   const repository = createProjectDocumentRepository(storePath);
   const server = createAppServer({ projectDocumentRepository: repository });
 

@@ -1,0 +1,91 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+
+interface SaveDocumentInput {
+  projectId: string;
+  originalFilename: string;
+  sourceText?: string;
+  fileBase64?: string;
+  mimeType?: string | null;
+}
+
+export interface StoredDocumentResult {
+  storagePath: string;
+  sourceText: string | null;
+}
+
+export interface DocumentStorageService {
+  saveDocument(input: SaveDocumentInput): Promise<StoredDocumentResult>;
+  readDocumentText(storagePath: string): Promise<string | null>;
+}
+
+export class LocalDocumentStorageService implements DocumentStorageService {
+  constructor(private readonly storageRoot: string) {}
+
+  async saveDocument(input: SaveDocumentInput): Promise<StoredDocumentResult> {
+    const extension = path.extname(input.originalFilename) || this.defaultExtension(input.mimeType);
+    const baseName = this.sanitizeFilename(path.basename(input.originalFilename, extension));
+    const storedFilename = `${Date.now()}-${randomUUID()}-${baseName}${extension}`;
+    const projectDir = path.join(this.storageRoot, input.projectId);
+    const absolutePath = path.join(projectDir, storedFilename);
+
+    await mkdir(projectDir, { recursive: true });
+
+    if (input.fileBase64) {
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      await writeFile(absolutePath, buffer);
+      return {
+        storagePath: path.join(input.projectId, storedFilename).replace(/\\/g, "/"),
+        sourceText: this.tryDecodeText(buffer, input.mimeType),
+      };
+    }
+
+    const sourceText = input.sourceText ?? "";
+    await writeFile(absolutePath, sourceText, "utf8");
+    return {
+      storagePath: path.join(input.projectId, storedFilename).replace(/\\/g, "/"),
+      sourceText,
+    };
+  }
+
+  async readDocumentText(storagePath: string): Promise<string | null> {
+    try {
+      const absolutePath = path.join(this.storageRoot, storagePath);
+      return await readFile(absolutePath, "utf8");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private sanitizeFilename(name: string): string {
+    return name.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "document";
+  }
+
+  private defaultExtension(mimeType?: string | null): string {
+    if (mimeType === "application/json") {
+      return ".json";
+    }
+    if (mimeType?.startsWith("text/")) {
+      return ".txt";
+    }
+    return ".bin";
+  }
+
+  private tryDecodeText(buffer: Buffer, mimeType?: string | null): string | null {
+    if (mimeType?.startsWith("text/") || mimeType === "application/json" || mimeType == null) {
+      return buffer.toString("utf8");
+    }
+    return null;
+  }
+}
+
+export function createDocumentStorageService(
+  storageRoot = process.env.DOCUMENT_STORAGE_ROOT ?? path.resolve(process.cwd(), "data", "storage"),
+): DocumentStorageService {
+  return new LocalDocumentStorageService(storageRoot);
+}
