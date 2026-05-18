@@ -1,5 +1,6 @@
 import http from "node:http";
 import { pathToFileURL } from "node:url";
+import { loadDocumentBackendConfig } from "./modules/document-intelligence/documentBackendConfig.js";
 import { createLlmClient } from "./modules/llm/createLlmClient.js";
 import { getLlmProviderStatus, loadLlmConfig } from "./modules/llm/llmConfig.js";
 import { createDocumentStorageService, type DocumentStorageService } from "./modules/document-intelligence/documentStorageService.js";
@@ -157,13 +158,17 @@ function buildStartupPage() {
 }
 
 async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
+  const raw = (await readRequestBody(request)).toString("utf8");
+  return raw ? JSON.parse(raw) : {};
+}
+
+async function readRequestBody(request: http.IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
 
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+  return Buffer.concat(chunks);
 }
 
 function writeJson(response: http.ServerResponse, statusCode: number, payload: unknown) {
@@ -183,6 +188,92 @@ function isAuthorized(request: http.IncomingMessage): boolean {
 
   const bearer = request.headers.authorization?.replace(/^Bearer\s+/i, "");
   return bearer === configuredToken || request.headers["x-admin-token"] === configuredToken;
+}
+
+interface MultipartPart {
+  name: string;
+  filename?: string;
+  contentType?: string;
+  data: Buffer;
+}
+
+function parseMultipartFormData(contentType: string, body: Buffer): MultipartPart[] {
+  const boundaryMatch = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
+  const boundaryToken = boundaryMatch?.[1] ?? boundaryMatch?.[2];
+  if (!boundaryToken) {
+    throw new Error("Missing multipart boundary.");
+  }
+
+  const boundary = `--${boundaryToken}`;
+  const raw = body.toString("latin1");
+  const segments = raw.split(boundary).slice(1, -1);
+
+  return segments.flatMap((segment) => {
+    const normalized = segment.replace(/^\r\n/, "").replace(/\r\n$/, "");
+    const headerEnd = normalized.indexOf("\r\n\r\n");
+    if (headerEnd === -1) {
+      return [];
+    }
+
+    const headerText = normalized.slice(0, headerEnd);
+    const contentText = normalized.slice(headerEnd + 4).replace(/\r\n$/, "");
+    const headers = headerText.split("\r\n");
+    const disposition = headers.find((line) => /^content-disposition:/i.test(line));
+    if (!disposition) {
+      return [];
+    }
+
+    const nameMatch = /name="([^"]+)"/i.exec(disposition);
+    if (!nameMatch) {
+      return [];
+    }
+
+    const filenameMatch = /filename="([^"]*)"/i.exec(disposition);
+    const contentTypeHeader = headers.find((line) => /^content-type:/i.test(line));
+
+    return [
+      {
+        name: nameMatch[1],
+        filename: filenameMatch?.[1] || undefined,
+        contentType: contentTypeHeader?.split(":")[1]?.trim(),
+        data: Buffer.from(contentText, "latin1"),
+      },
+    ];
+  });
+}
+
+async function readCreateDocumentRequestBody(request: http.IncomingMessage): Promise<CreateDocumentRequestBody> {
+  const contentType = request.headers["content-type"] ?? "";
+
+  if (/multipart\/form-data/i.test(contentType)) {
+    const raw = await readRequestBody(request);
+    const parts = parseMultipartFormData(contentType, raw);
+    const fieldMap = new Map<string, MultipartPart[]>();
+
+    for (const part of parts) {
+      const existing = fieldMap.get(part.name) ?? [];
+      existing.push(part);
+      fieldMap.set(part.name, existing);
+    }
+
+    const filePart = fieldMap.get("file")?.[0];
+    const firstValue = (name: string) => fieldMap.get(name)?.[0]?.data.toString("utf8").trim();
+
+    return {
+      originalFilename: firstValue("originalFilename") || filePart?.filename,
+      firstPageText: firstValue("firstPageText"),
+      sourceText: firstValue("sourceText"),
+      fileBase64: filePart ? filePart.data.toString("base64") : undefined,
+      mimeType: firstValue("mimeType") ?? filePart?.contentType ?? null,
+      title: firstValue("title") ?? null,
+      source: firstValue("source") ?? null,
+      recordingDate: firstValue("recordingDate") ?? null,
+      receptionNumber: firstValue("receptionNumber") ?? null,
+      bookPage: firstValue("bookPage") ?? null,
+    };
+  }
+
+  return (await readJsonBody(request)) as CreateDocumentRequestBody;
 }
 
 interface AppServerDependencies {
@@ -226,6 +317,28 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
         }
 
         writeJson(response, 200, getLlmProviderStatus());
+        return;
+      }
+
+      if (pathname === "/api/admin/document-backend-status" && request.method === "GET") {
+        if (!isAuthorized(request)) {
+          writeJson(response, 403, { error: "Forbidden" });
+          return;
+        }
+
+        const config = loadDocumentBackendConfig();
+        const storageHealth = await documentStorageService.healthCheck();
+        writeJson(response, 200, {
+          provider: config.provider,
+          storePath: config.provider === "local" ? config.storePath : null,
+          storageRoot: config.provider === "local" ? config.storageRoot : null,
+          supabase: {
+            urlConfigured: Boolean(config.supabaseUrl),
+            serviceRoleKeyConfigured: Boolean(config.supabaseServiceRoleKey),
+            bucket: config.supabaseStorageBucket,
+          },
+          storageHealth,
+        });
         return;
       }
 
@@ -326,7 +439,7 @@ export function createAppServer(dependencies: AppServerDependencies = {}) {
 
       if (projectDocumentsMatch && request.method === "POST") {
         const [, projectId] = projectDocumentsMatch;
-        const body = (await readJsonBody(request)) as CreateDocumentRequestBody;
+        const body = await readCreateDocumentRequestBody(request);
         const originalFilename = body.originalFilename?.trim();
 
         if (!originalFilename) {

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadDocumentBackendConfig } from "./documentBackendConfig.js";
@@ -17,9 +17,19 @@ export interface StoredDocumentResult {
   sourceText: string | null;
 }
 
+export interface DocumentStorageHealthStatus {
+  provider: "local" | "supabase";
+  ok: boolean;
+  storageTarget: string;
+  readable: boolean;
+  writable: boolean;
+  details: string[];
+}
+
 export interface DocumentStorageService {
   saveDocument(input: SaveDocumentInput): Promise<StoredDocumentResult>;
   readDocumentText(storagePath: string): Promise<string | null>;
+  healthCheck(): Promise<DocumentStorageHealthStatus>;
 }
 
 export class LocalDocumentStorageService implements DocumentStorageService {
@@ -61,6 +71,37 @@ export class LocalDocumentStorageService implements DocumentStorageService {
         return null;
       }
       throw error;
+    }
+  }
+
+  async healthCheck(): Promise<DocumentStorageHealthStatus> {
+    const healthDir = path.join(this.storageRoot, "__healthcheck__");
+    const healthFile = path.join(healthDir, `${randomUUID()}.txt`);
+    const payload = "optimacy-document-storage-healthcheck";
+
+    try {
+      await mkdir(healthDir, { recursive: true });
+      await writeFile(healthFile, payload, "utf8");
+      const roundTrip = await readFile(healthFile, "utf8");
+      await rm(healthFile, { force: true });
+
+      return {
+        provider: "local",
+        ok: roundTrip === payload,
+        storageTarget: this.storageRoot,
+        readable: roundTrip === payload,
+        writable: true,
+        details: [`Local storage root verified at ${this.storageRoot}.`],
+      };
+    } catch (error) {
+      return {
+        provider: "local",
+        ok: false,
+        storageTarget: this.storageRoot,
+        readable: false,
+        writable: false,
+        details: [error instanceof Error ? error.message : "Local storage health check failed."],
+      };
     }
   }
 
@@ -116,6 +157,33 @@ export class SupabaseDocumentStorageService implements DocumentStorageService {
 
   async readDocumentText(storagePath: string): Promise<string | null> {
     return await this.client.downloadObject(this.bucket, storagePath);
+  }
+
+  async healthCheck(): Promise<DocumentStorageHealthStatus> {
+    const probePath = `__healthcheck__/${randomUUID()}.txt`;
+
+    try {
+      await this.client.uploadObject(this.bucket, probePath, "optimacy-document-storage-healthcheck", "text/plain; charset=utf-8");
+      const roundTrip = await this.client.downloadObject(this.bucket, probePath);
+
+      return {
+        provider: "supabase",
+        ok: roundTrip === "optimacy-document-storage-healthcheck",
+        storageTarget: this.bucket,
+        readable: roundTrip === "optimacy-document-storage-healthcheck",
+        writable: true,
+        details: [`Supabase storage bucket verified: ${this.bucket}.`],
+      };
+    } catch (error) {
+      return {
+        provider: "supabase",
+        ok: false,
+        storageTarget: this.bucket,
+        readable: false,
+        writable: false,
+        details: [error instanceof Error ? error.message : "Supabase storage health check failed."],
+      };
+    }
   }
 
   private sanitizeFilename(name: string): string {

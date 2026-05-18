@@ -37,6 +37,24 @@ describe("app server", () => {
     await close();
   });
 
+  it("returns document backend status", async () => {
+    const { baseUrl, close } = await startTestServer();
+    const response = await fetch(`${baseUrl}/api/admin/document-backend-status`);
+    const body = (await response.json()) as {
+      provider: string;
+      storePath: string | null;
+      storageHealth: { ok: boolean; provider: string; writable: boolean };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.provider).toBe("local");
+    expect(body.storePath).toContain("project-documents.json");
+    expect(body.storageHealth.provider).toBe("local");
+    expect(body.storageHealth.ok).toBe(true);
+    expect(body.storageHealth.writable).toBe(true);
+    await close();
+  });
+
   it("runs the admin AI settings test route in mock mode", async () => {
     const { baseUrl, close } = await startTestServer();
     const response = await fetch(`${baseUrl}/api/admin/ai-settings/test`, {
@@ -94,6 +112,47 @@ describe("app server", () => {
     expect(createResponse.status).toBe(201);
     const stored = await readFile(path.join(tempDir, "storage", created.document.storagePath), "utf8");
     expect(stored).toBe(sourceText);
+    await close();
+  });
+
+  it("accepts multipart document uploads with a file payload", async () => {
+    const { baseUrl, close } = await startTestServer();
+    const boundary = "----optimacy-test-boundary";
+    const fileText = "Multipart field file content for local document storage.";
+    const multipartBody = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="title"',
+      "",
+      "Multipart Upload Title",
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="file"; filename="upload-notes.txt"',
+      "Content-Type: text/plain",
+      "",
+      fileText,
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+
+    const response = await fetch(`${baseUrl}/api/projects/project-multipart/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body: multipartBody,
+    });
+    const body = (await response.json()) as { document: { id: string; originalFilename: string; title: string | null; storagePath: string } };
+
+    expect(response.status).toBe(201);
+    expect(body.document.originalFilename).toBe("upload-notes.txt");
+    expect(body.document.title).toBe("Multipart Upload Title");
+
+    const stored = await readFile(path.join(tempDir, "storage", body.document.storagePath), "utf8");
+    expect(stored).toBe(fileText);
+
+    const sourceResponse = await fetch(`${baseUrl}/api/documents/${body.document.id}/source-text`);
+    const sourceBody = (await sourceResponse.json()) as { sourceText: string };
+    expect(sourceResponse.status).toBe(200);
+    expect(sourceBody.sourceText).toBe(fileText);
     await close();
   });
 
